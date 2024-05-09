@@ -306,6 +306,52 @@ def engineAnalysis(board, game, engine, options):
 
     return analysisMoves, evalThresholdCp
 
+# create 3D arrays with detailed move infos
+def engineFullAnalysis(board, game, engine, options):
+    contemptList = [-100,0,100] # options.contemptList
+    nodeList = [1000,3000,10000] # options.nodeList
+    moveList = []
+    
+    for contempt in contemptList:
+        info = engine.analyse(board, chess.engine.Limit(nodes=max(nodeList)), game = game, multipv = 100, options = {"ClearTree": True, "Contempt": contempt})
+        analysisMoves = []
+        for i in info:
+            if ('score' in i) and ('pv' in i) and (len(i['pv']) > 0):
+                analysisMoves.append(
+                    AnalysisMoveInfo(
+                        i['pv'][0],
+                        i['score'].relative.score(mate_score=1000000),
+                        i['nodes']))
+        minCp = analysisMoves[0].evalCp - options.evalThresholdCp
+        for i in info:
+            move = i['pv'][0]
+            if (move not in moveList and i['score'] > minCp):
+                moveList.append(move)
+    
+    dataDict = []
+    for c,contempt in iter(contemptList):
+        for m,move in iter(moveList):
+            for n,nodes in iter(nodeList):
+                info = engine.analyse(board, chess.engine.Limit(nodes=nodes), game = game, multipv = 1, root_moves = [move], options = {"ClearTree": True, "Contempt": contempt})
+                dataDict.append({'contempt': contempt, 'move': move, 'dodes': nodes, 'pv': info[0]['pv'], 'score': info[0]['score']})
+                
+    return dataDict, moveList, contemptList, nodesList
+
+# generate Plots for contempt dependency of best moves
+def generatePlots(dataDict, moveList, contemptList, nodesList):
+    dataArray = np.zeros([len(moveList), len(contemptList), len(nodesList)])
+    for data in dataDict:
+        dataArray[moveList.index(data['move']),contemptList.index(data['contempt']),nodesList.index(data['nodes'])] = data['score']
+            
+    
+    bestMoveArray = np.max((dataArray == np.max(dataArray, axis=0)) * np.arange(len(movelist))[:,np.newaxis,np.newaxis], axis=0)
+    plt.figure(0)
+    plt.subplot(211)
+    plt.plot(contemptList, dataArray[:,:,nodesList.index(max(nodesList))])
+    plt.subplot(212)
+    plt.imshow(bestMoveArray, interpolation='nearest')
+    plt.show()
+
 # remove moves that don't have big enough score
 def pruneWeakMoves(analysisMoves, evalThresholdCp):
     ret = [ ]
@@ -428,8 +474,12 @@ def analyzeGame(whiteEngine, blackEngine, game, num, options, openingExplorer):
         if (not skip) and (engine is not None):
             sys.stderr.write(f"- move {currentMoveNumStr(node.board())}\n")
 
+            # fullAnalysis, moveList, contemptLits, nodeList = engineFullAnalysis(node.board(), game, engine, options)
+            
+            # generatePlots(fullAnalysis, moveList, contemptLits, nodeList)
+            
             analysisMoves, evalThresholdCp = engineAnalysis(node.board(), game, engine, options)
-
+            
             # filter out moves that don't have big enough score
             analysisMoves = pruneWeakMoves(
                 analysisMoves,
